@@ -294,9 +294,9 @@ Constant* llvm::constFromBytes(unsigned char* Bytes, Type* Ty, const DataLayout*
 
       Constant* Result = ConstantExpr::getBitCast(IntResult, Ty); // The bitcast might eval here
       if(ConstantExpr* CE = dyn_cast_or_null<ConstantExpr>(Result))
-	Result = ConstantFoldConstantExpression(CE, TD);
+	Result = ConstantFoldConstant(CE, *TD);
       if(!Result) {
-	DEBUG(dbgs() << "Failed to fold casting " << *(IntResult) << " to " << *(Ty) << "\n");
+	LLVM_DEBUG(dbgs() << "Failed to fold casting " << *(IntResult) << " to " << *(Ty) << "\n");
 	return 0;
       }
       else {
@@ -323,7 +323,7 @@ Constant* llvm::constFromBytes(unsigned char* Bytes, Type* Ty, const DataLayout*
 
     uint64_t ECount = ATy->getNumElements();
     if(ECount == 0) {
-      DEBUG(dbgs() << "Can't produce a constant array of 0 length\n");
+      LLVM_DEBUG(dbgs() << "Can't produce a constant array of 0 length\n");
       return 0;
     }
 
@@ -350,7 +350,7 @@ Constant* llvm::constFromBytes(unsigned char* Bytes, Type* Ty, const DataLayout*
 
     const StructLayout* SL = TD->getStructLayout(STy);
     if(!SL) {
-      DEBUG(dbgs() << "Couldn't get struct layout for type " << *STy << "\n");
+      LLVM_DEBUG(dbgs() << "Couldn't get struct layout for type " << *STy << "\n");
       return 0;
     }
     
@@ -375,7 +375,7 @@ Constant* llvm::constFromBytes(unsigned char* Bytes, Type* Ty, const DataLayout*
   }
   else {
 
-    DEBUG(dbgs() << "Can't build a constant containing unhandled type " << (*Ty) << "\n");
+    LLVM_DEBUG(dbgs() << "Can't build a constant containing unhandled type " << (*Ty) << "\n");
     return 0;
 
   }

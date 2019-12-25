@@ -37,7 +37,7 @@ using namespace llvm;
 static void getReadBuf(ShadowValue CS, ShadowValue& V, uint64_t& Size) {
 
   if(!tryGetConstantInt(getValArgOperand(CS, 2), Size))
-    Size = AliasAnalysis::UnknownSize;
+    Size = MemoryLocation::UnknownSize;
   V = getValArgOperand(CS, 1);
 
 }
@@ -46,7 +46,7 @@ static void getReadBuf(ShadowValue CS, ShadowValue& V, uint64_t& Size) {
 static void getPollFds(ShadowValue CS, ShadowValue& V, uint64_t& Size) {
 
   if(!tryGetConstantInt(getValArgOperand(CS, 1), Size))
-    Size = AliasAnalysis::UnknownSize;
+    Size = MemoryLocation::UnknownSize;
   else
     Size *= sizeof(struct pollfd);
   V = getValArgOperand(CS, 0);
@@ -57,7 +57,7 @@ static void getPollFds(ShadowValue CS, ShadowValue& V, uint64_t& Size) {
 static void getReturnVal(ShadowValue CS, ShadowValue& V, uint64_t& Size) {
 
   V = CS;
-  Size = AliasAnalysis::UnknownSize;
+  Size = MemoryLocation::UnknownSize;
 
 }
 
@@ -66,7 +66,7 @@ static void getRecvfromBuffer(ShadowValue CS, ShadowValue& V, uint64_t& Size) {
 
   ShadowValue LenArg = getValArgOperand(CS, 2);
   if(!tryGetConstantInt(LenArg, Size))
-    Size = AliasAnalysis::UnknownSize;
+    Size = MemoryLocation::UnknownSize;
   V = getValArgOperand(CS, 1);
 
 }
@@ -76,7 +76,7 @@ static void getErrno(ShadowValue CS, ShadowValue& V, uint64_t& Size) {
 
   if(GlobalVariable* GV = cast<CallInst>(CS.getBareVal())->getParent()->getParent()->getParent()->getGlobalVariable("errno", true)) {
     V = ShadowValue(GV);
-    Size = AliasAnalysis::UnknownSize;
+    Size = MemoryLocation::UnknownSize;
   }
 
 }
@@ -88,9 +88,9 @@ static void getErrno(ShadowValue CS, ShadowValue& V, uint64_t& Size) {
 // { NULL, argument number, buffer size }
 
 // Plain parameters. These read/modify the given argument in its entirety.
-struct IHPLocationInfo locArg0 = { 0, 0, AliasAnalysis::UnknownSize };
-struct IHPLocationInfo locArg1 = { 0, 1, AliasAnalysis::UnknownSize };
-struct IHPLocationInfo locArg2 = { 0, 2, AliasAnalysis::UnknownSize };
+struct IHPLocationInfo locArg0 = { 0, 0, MemoryLocation::UnknownSize };
+struct IHPLocationInfo locArg1 = { 0, 1, MemoryLocation::UnknownSize };
+struct IHPLocationInfo locArg2 = { 0, 2, MemoryLocation::UnknownSize };
 
 // Sized parameters, These read/modify a particular argument size. This could need
 // fixing if there's a chance we're building against a different struct than the kernel

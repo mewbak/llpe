@@ -39,7 +39,7 @@ void llvm::patchReferences(std::vector<std::pair<WeakVH, uint32_t> >& Refs, Valu
     I->setOperand(it->second, V);
     // Note this would be unsafe if any of the patch recipients were listed more than
     // once in patch lists.
-    if(Value* V = SimplifyInstruction(I)) {
+    if(Value* V = SimplifyInstruction(I, *GlobalTD)) {
       I->replaceAllUsesWith(V);
       I->eraseFromParent();
     }
@@ -59,13 +59,13 @@ static Instruction* getInsertLocation(Value* V) {
     BasicBlock::iterator BI(I);
     ++BI;
     release_assert(BI != I->getParent()->end());
-    return BI;
+    return &*BI;
 
   }
   else if(Argument* A = dyn_cast<Argument>(V)) {
     
     release_assert(A->getParent() && A->getParent()->getEntryBlock().size());
-    return A->getParent()->getEntryBlock().begin();
+    return &*(A->getParent()->getEntryBlock().begin());
 
   }
   else {

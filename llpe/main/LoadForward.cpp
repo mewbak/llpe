@@ -144,9 +144,9 @@ bool IntegrationAttempt::tryResolveLoadFromConstant(ShadowInstruction* LoadI, Im
     
     if(GV->isConstant()) {
 
-      uint64_t LoadSize = GlobalAA->getTypeStoreSize(LoadI->getType());
+      uint64_t LoadSize = GlobalTD->getTypeStoreSize(LoadI->getType());
       Type* FromType = GV->getInitializer()->getType();
-      uint64_t FromSize = GlobalAA->getTypeStoreSize(FromType);
+      uint64_t FromSize = GlobalTD->getTypeStoreSize(FromType);
 
       if(Ptr.Offset < 0 || Ptr.Offset + LoadSize > FromSize) {
 	Result.setOverdef();
@@ -201,7 +201,7 @@ static bool shouldMultiload(ImprovedValSetSingle& PB) {
 // Try to execute load LI which reads from a set of 2+ pointers.
 static bool tryMultiload(ShadowInstruction* LI, ImprovedValSet*& NewIV, std::string* report) {
 
-  uint64_t LoadSize = GlobalAA->getTypeStoreSize(LI->getType());
+  uint64_t LoadSize = GlobalTD->getTypeStoreSize(LI->getType());
 
   // We already know that LI's IVSet is made up entirely of nulls and definite pointers.
   ImprovedValSetSingle* NewPB = newIVS();
@@ -622,13 +622,13 @@ Constant* llvm::extractAggregateMemberAt(Constant* FromC, int64_t Offset, Type* 
       return (FromC);
     else if(allowTotalDefnImplicitPtrToInt(FromType, Target, TD))
       return ConstantExpr::getPtrToInt(FromC, Target);
-    DEBUG(dbgs() << "Can't use simple element extraction because load implies cast from " << (*(FromType)) << " to " << (*Target) << "\n");
+    LLVM_DEBUG(dbgs() << "Can't use simple element extraction because load implies cast from " << (*(FromType)) << " to " << (*Target) << "\n");
     return 0;
   }
 
   if(Offset < 0 || Offset + TargetSize > FromSize) {
 
-    DEBUG(dbgs() << "Can't use element extraction because offset " << Offset << " and size " << TargetSize << " are out of bounds for object with size " << FromSize << "\n");
+    LLVM_DEBUG(dbgs() << "Can't use element extraction because offset " << Offset << " and size " << TargetSize << " are out of bounds for object with size " << FromSize << "\n");
     return 0;
 
   }
@@ -673,7 +673,7 @@ Constant* llvm::extractAggregateMemberAt(Constant* FromC, int64_t Offset, Type* 
 
     const StructLayout* SL = TD->getStructLayout(CS->getType());
     if(!SL) {
-      DEBUG(dbgs() << "Couldn't get struct layout for type " << *(CS->getType()) << "\n");
+      LLVM_DEBUG(dbgs() << "Couldn't get struct layout for type " << *(CS->getType()) << "\n");
       return 0;
     }
 
@@ -689,10 +689,10 @@ Constant* llvm::extractAggregateMemberAt(Constant* FromC, int64_t Offset, Type* 
       // This is a sub-access within this element.
       return extractAggregateMemberAt(cast<Constant>(FromC->getOperand(StartE)), StartOff, Target, TargetSize, TD);
     }
-    DEBUG(dbgs() << "Can't use simple element extraction because load spans multiple elements\n");
+    LLVM_DEBUG(dbgs() << "Can't use simple element extraction because load spans multiple elements\n");
   }
   else {
-    DEBUG(dbgs() << "Can't use simple element extraction because load requires sub-field access\n");
+    LLVM_DEBUG(dbgs() << "Can't use simple element extraction because load requires sub-field access\n");
   }
 
   return 0;
@@ -1126,7 +1126,7 @@ void llvm::executeStoreInst(ShadowInstruction* StoreSI) {
   // Get written location:
   ShadowBB* StoreBB = StoreSI->parent;
   ShadowValue Ptr = StoreSI->getOperand(1);
-  uint64_t PtrSize = GlobalAA->getTypeStoreSize(StoreSI->invar->I->getOperand(0)->getType());
+  uint64_t PtrSize = GlobalTD->getTypeStoreSize(StoreSI->invar->I->getOperand(0)->getType());
 
   ImprovedValSetSingle PtrSet;
   release_assert(getImprovedValSetSingle(Ptr, PtrSet) && "Write through uninitialised PB?");
@@ -1423,7 +1423,7 @@ uint64_t ShadowValue::getValSize() const {
     return GlobalTD->getPointerSize();
   default:
     Type* SrcTy = getNonPointerType();
-    return GlobalAA->getTypeStoreSize(SrcTy);
+    return GlobalTD->getTypeStoreSize(SrcTy);
 
   }
 
@@ -1516,7 +1516,7 @@ void llvm::getConstSubVals(ShadowValue FromSV, uint64_t Offset, uint64_t TargetS
 
   release_assert(FromSV.isVal() || FromSV.isConstantInt());
 
-  uint64_t FromSize = GlobalAA->getTypeStoreSize(FromSV.getNonPointerType());
+  uint64_t FromSize = GlobalTD->getTypeStoreSize(FromSV.getNonPointerType());
 
   if(Offset == 0 && TargetSize == FromSize) {
     AddIVSSV(0, TargetSize, FromSV);
@@ -1598,7 +1598,7 @@ void llvm::getConstSubVals(ShadowValue FromSV, uint64_t Offset, uint64_t TargetS
 
     const StructLayout* SL = GlobalTD->getStructLayout(CS->getType());
     if(!SL) {
-      DEBUG(dbgs() << "Couldn't get struct layout for type " << *(CS->getType()) << "\n");
+      LLVM_DEBUG(dbgs() << "Couldn't get struct layout for type " << *(CS->getType()) << "\n");
       Dest.push_back(IVSR(Offset, TargetSize, ImprovedValSetSingle(ValSetTypeUnknown, true)));
       return;
     }
@@ -1612,7 +1612,7 @@ void llvm::getConstSubVals(ShadowValue FromSV, uint64_t Offset, uint64_t TargetS
 
       // Read a partial on the left:
       Constant* StartC = CS->getAggregateElement(StartE);
-      uint64_t StartCSize = GlobalAA->getTypeStoreSize(StartC->getType());
+      uint64_t StartCSize = GlobalTD->getTypeStoreSize(StartC->getType());
       uint64_t ThisReadSize;
 
       if(EndE == StartE)
@@ -1637,7 +1637,7 @@ void llvm::getConstSubVals(ShadowValue FromSV, uint64_t Offset, uint64_t TargetS
     for(;StartE < EndE; ++StartE) {
 
       Constant* E = CS->getAggregateElement(StartE);
-      uint64_t ESize = GlobalAA->getTypeStoreSize(E->getType());
+      uint64_t ESize = GlobalTD->getTypeStoreSize(E->getType());
       uint64_t ThisOff = SL->getElementOffset(StartE);
       AddIVSConst(ThisOff, ESize, E);
 
@@ -2076,7 +2076,7 @@ void llvm::truncateLeft(ImprovedValSetMulti::MapIt& it, uint64_t n, ImprovedValS
   }
 
   Constant* C = getSingleConstant(S.Values[0].V);
-  uint64_t CSize = GlobalAA->getTypeStoreSize(C->getType());
+  uint64_t CSize = GlobalTD->getTypeStoreSize(C->getType());
   truncateConstVal(it, CSize - n, n, firstPtr);
 
 }
@@ -2397,7 +2397,7 @@ void llvm::executeAllocaInst(ShadowInstruction* SI) {
   AllocData& AD = parentIA->localAllocas.back();
   AD.allocIdx = allocIdx;
   
-  executeAllocInst(SI, AD, allocType, allocType ? GlobalAA->getTypeStoreSize(allocType) : ULONG_MAX, parentIA->stack_depth, allocIdx);
+  executeAllocInst(SI, AD, allocType, allocType ? GlobalTD->getTypeStoreSize(allocType) : ULONG_MAX, parentIA->stack_depth, allocIdx);
 
 }
 
@@ -3063,7 +3063,7 @@ bool llvm::clobberSyscallModLocations(Function* F, ShadowInstruction* SI) {
 	  ShadowValue ClobberV(SGV);
 	  ImprovedValSetSingle ClobberIVS;
 	  ClobberIVS.set(ImprovedVal(ClobberV, LLONG_MAX), ValSetTypePB);
-	  executeWriteInst(0, ClobberIVS, OD, AliasAnalysis::UnknownSize, SI);
+	  executeWriteInst(0, ClobberIVS, OD, MemoryLocation::UnknownSize, SI);
 
 	}
 
@@ -3221,7 +3221,7 @@ void llvm::executeUnexpandedCall(ShadowInstruction* SI) {
     // Finally clobber all locations; this call is entirely unhandled
     //errs() << "Warning: unhandled call to " << itcache(SI) << " clobbers all locations\n";
     ImprovedValSetSingle OD(ValSetTypeUnknown, true);
-    executeWriteInst(0, OD, OD, AliasAnalysis::UnknownSize, SI);
+    executeWriteInst(0, OD, OD, MemoryLocation::UnknownSize, SI);
     // Functions that clobber FD state happen to be the same.
     FDStore* FDS = SI->parent->getWritableFDStore();
     FDS->fds.clear();

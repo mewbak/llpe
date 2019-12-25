@@ -17,7 +17,7 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Target/TargetLibraryInfo.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 
 #define DEBUG_TYPE "llpe-toplevel"
 
@@ -320,7 +320,7 @@ void LLPEAnalysisPass::createPointerArguments(InlineAttempt* IA) {
 
     argAllocSites.push_back(std::vector<Value*>());
 
-    Argument* A = AI;
+    Argument* A = &*AI;
     if(A->getType()->isPointerTy()) {
 
       ImprovedValSetSingle* IVS = cast<ImprovedValSetSingle>(IA->argShadows[i].i.PB);
@@ -462,11 +462,9 @@ bool LLPEAnalysisPass::runOnModule(Module& M) {
     exit(1);
   }
 
-  TD = &getAnalysisIfAvailable<DataLayoutPass>()->getDataLayout();
+  TD = &M.getDataLayout();
   GlobalTD = TD;
-  AA = &getAnalysis<AliasAnalysis>();
-  GlobalAA = AA;
-  GlobalTLI = getAnalysisIfAvailable<TargetLibraryInfo>();
+  GlobalTLI = &getAnalysisIfAvailable<TargetLibraryInfoWrapperPass>()->getTLI();
   GlobalIHP = this;
   GInt8Ptr = Type::getInt8PtrTy(M.getContext());
   GInt8 = Type::getInt8Ty(M.getContext());
@@ -483,7 +481,7 @@ bool LLPEAnalysisPass::runOnModule(Module& M) {
     if(!MI->isDeclaration()) {
       DominatorTree* NewDT = new DominatorTree();
       NewDT->recalculate(*MI);
-      DTs[MI] = NewDT;
+      DTs[&*MI] = NewDT;
     }
 
   }
@@ -501,11 +499,11 @@ bool LLPEAnalysisPass::runOnModule(Module& M) {
   // Mark realloc as an identified object if the function is defined:
   if(Function* Realloc = M.getFunction("realloc")) {
 
-    Realloc->setDoesNotAlias(0);
+    Realloc->setReturnDoesNotAlias();
 
   }
 
-  DEBUG(dbgs() << "Considering inlining starting at " << F.getName() << ":\n");
+  LLVM_DEBUG(dbgs() << "Considering inlining starting at " << F.getName() << ":\n");
 
   std::vector<Constant*> argConstants(F.arg_size(), 0);
   uint32_t argvIdx = 0xffffffff;
@@ -583,8 +581,7 @@ bool LLPEAnalysisPass::runOnModule(Module& M) {
 
 void LLPEAnalysisPass::getAnalysisUsage(AnalysisUsage &AU) const {
   
-  AU.addRequired<AliasAnalysis>();
-  AU.addRequired<LoopInfo>();
+  AU.addRequired<LoopInfoWrapperPass>();
   const PassInfo* BAAInfo = lookupPassInfo(StringRef("basicaa"));
   if(!BAAInfo) {
     errs() << "Couldn't load Basic AA!";

@@ -220,10 +220,10 @@ void llvm::getInstructionsText(PersistPrinter*, const Function* IF, DenseMap<con
 
   for(Function::const_iterator FI = IF->begin(), FE = IF->end(); FI != FE; ++FI) {
 
-    const BasicBlock *BB = FI;
+    const BasicBlock *BB = &*FI;
     for(BasicBlock::const_iterator BI = BB->begin(), BE = BB->end(); BI != BE; ++BI) {
 
-      const Instruction* I = BI;
+      const Instruction* I = &*BI;
       std::string instText;
       {
 	raw_string_ostream RSO(instText);
@@ -265,8 +265,8 @@ void llvm::getGVText(PersistPrinter*, const Module* M, DenseMap<const GlobalVari
       RSO << *it;
     }
 
-    GVMap[it] = GVText;
-    BriefGVMap[it] = GVText;
+    GVMap[&*it] = GVText;
+    BriefGVMap[&*it] = GVText;
 
   }
 

@@ -198,8 +198,8 @@ Function* llvm::cloneEmptyFunction(Function* F, GlobalValue::LinkageTypes LT, co
 
     auto attrs = NewF->getAttributes();
 
-    attrs = attrs.removeAttribute(F->getContext(), AttributeSet::ReturnIndex, Attribute::ZExt);
-    attrs = attrs.removeAttribute(F->getContext(), AttributeSet::ReturnIndex, Attribute::SExt);
+    attrs = attrs.removeAttribute(F->getContext(), AttributeList::ReturnIndex, Attribute::ZExt);
+    attrs = attrs.removeAttribute(F->getContext(), AttributeList::ReturnIndex, Attribute::SExt);
     if(NewFType->getNumParams() != 0)
       attrs = attrs.removeAttribute(F->getContext(), 1, Attribute::StructRet);
 
@@ -236,7 +236,7 @@ BasicBlock* IntegrationAttempt::createBasicBlock(LLVMContext& Ctx, const Twine& 
   if(AddTo && getFunctionRoot()->firstFailedBlock != AddTo->end() && !isFailedBlock) {
 
     // Add block before any failed blocks
-    newBlock = BasicBlock::Create(Ctx, Name, AddTo, getFunctionRoot()->firstFailedBlock);
+    newBlock = BasicBlock::Create(Ctx, Name, AddTo, &*(getFunctionRoot()->firstFailedBlock));
 
   }
   else {
@@ -634,7 +634,7 @@ Value* InlineAttempt::getArgCommittedValue2(ShadowArg* SA, BasicBlock* emitBB, I
     for(unsigned i = 0; i < n; ++i)
       ++it;
 
-    return it;
+    return &*it;
 
   }
   else {
@@ -829,7 +829,7 @@ PHINode* llvm::makePHI(Type* Ty, const Twine& Name, BasicBlock* emitBB) {
     ++it;
   
   if(it != emitBB->end())
-    return PHINode::Create(Ty, 0, Name, it);
+    return PHINode::Create(Ty, 0, Name, &*it);
   else
     return PHINode::Create(Ty, 0, Name, emitBB);
 
@@ -1079,7 +1079,7 @@ void IntegrationAttempt::emitTerminator(ShadowBB* BB, ShadowInstruction* I, Basi
       // to continue on the specialised path; in ConditionalSpec.cpp we can see the opposite case being synthesised.
       if(IA->hasFailedReturnPath() && !IA->isRootMainCall()) {
 
-	Value* retFlag = ConstantInt::getTrue(emitBB->getContext());	
+	Constant* retFlag = ConstantInt::getTrue(emitBB->getContext());	
 	if(!retVal) {
 
 	  // Function was void before; just return true.
@@ -1093,7 +1093,7 @@ void IntegrationAttempt::emitTerminator(ShadowBB* BB, ShadowInstruction* I, Basi
 	  Type* normalRet = retType->getElementType(0);
 	  Constant* undefRet = UndefValue::get(normalRet);
 	  // Create { undef, true }
-	  Value* aggTemplate = ConstantStruct::get(retType, undefRet, retFlag, NULL);
+	  Value* aggTemplate = ConstantStruct::get(retType, {undefRet, retFlag});
 	  // Return { retval, true }
 	  retVal = InsertValueInst::Create(aggTemplate, retVal, 0, VerboseNames ? "success_ret" : "", emitBB);
 
@@ -1285,7 +1285,7 @@ static Constant* getOrInsertLocalFunction(StringRef Name, FunctionType* FT) {
   Module* M = getGlobalModule();
   if(Function* F = M->getFunction(Name))
     return F;
-  return M->getOrInsertFunction(Name, FT);
+  return cast<Constant>(M->getOrInsertFunction(Name, FT).getCallee());
 
 }
 
@@ -1359,7 +1359,7 @@ bool IntegrationAttempt::emitVFSCall(ShadowBB* BB, ShadowInstruction* I, SmallVe
 
 	  Constant* MemcmpSize = ConstantInt::get(GInt64, it->second.readSize);
 
-	  Value *MemCmpFn = F.getParent()->getOrInsertFunction("memcmp", GInt32, GInt8Ptr, GInt8Ptr, GInt64, (Type*)0);
+	  Value *MemCmpFn = cast<Constant>(F.getParent()->getOrInsertFunction("memcmp", GInt32, GInt8Ptr, GInt8Ptr, GInt64, (Type*)0).getCallee());
 	  
 	  Value *CallArgs[] = { readBuffer, checkBuffer, MemcmpSize };
 	  Instruction* ReadMemcmp = CallInst::Create(MemCmpFn, ArrayRef<Value*>(CallArgs, 3), "", emitBB);
@@ -1381,7 +1381,7 @@ bool IntegrationAttempt::emitVFSCall(ShadowBB* BB, ShadowInstruction* I, SmallVe
 	  // Read from a regular file.
 	  // Emit a check that file specialisations are still admissible:
 	  Type* Int32Ty = IntegerType::get(Context, 32);
-	  Constant* CheckFn = F.getParent()->getOrInsertFunction("lliowd_ok", Int32Ty, NULL);
+	  Constant* CheckFn = cast<Constant>(F.getParent()->getOrInsertFunction("lliowd_ok", Int32Ty).getCallee());
 	  Value* CheckResult = CallInst::Create(CheckFn, ArrayRef<Value*>(), "readcheck", emitBB);
       
 	  Constant* Zero32 = Constant::getNullValue(Int32Ty);
@@ -1459,7 +1459,7 @@ bool IntegrationAttempt::emitVFSCall(ShadowBB* BB, ShadowInstruction* I, SmallVe
 
 	Constant* ZeroIdx = ConstantInt::get(Int64Ty, 0);
 	Constant* Idxs[2] = {ZeroIdx, ZeroIdx};
-	Constant* CopySource = ConstantExpr::getGetElementPtr(ArrayGlobal, Idxs, 2);
+	Constant* CopySource = ConstantExpr::getGetElementPtr(0, ArrayGlobal, Idxs, 2);
       
 	Constant* MemcpySize = ConstantInt::get(Int64Ty, it->second.readSize);
 
@@ -1526,7 +1526,7 @@ bool IntegrationAttempt::emitVFSCall(ShadowBB* BB, ShadowInstruction* I, SmallVe
 
     // Emit an lliowd_ok check, and if it fails branch to the real stat instruction.
     Type* Int32Ty = IntegerType::get(Context, 32);
-    Constant* CheckFn = F.getParent()->getOrInsertFunction("lliowd_ok", Int32Ty, NULL);
+    Constant* CheckFn = cast<Constant>(F.getParent()->getOrInsertFunction("lliowd_ok", Int32Ty).getCallee());
     Value* CheckResult = CallInst::Create(CheckFn, ArrayRef<Value*>(), VerboseNames ? "readcheck" : "", emitBB);
 	
     Constant* Zero32 = Constant::getNullValue(Int32Ty);
@@ -1647,7 +1647,7 @@ void IntegrationAttempt::emitCall(ShadowBB* BB, ShadowInstruction* I, SmallVecto
 	// if not required.
 
 	ImmutableCallSite OldCI(I->invar->I);
-	AttributeSet attrs = OldCI.getAttributes();
+	AttributeList attrs = OldCI.getAttributes();
 	
 	std::vector<Value*> Args;
 
@@ -2040,7 +2040,7 @@ Constant* llvm::getGVOffset(Constant* GV, int64_t Offset, Type* targetType) {
     OffsetGV = CastGV;
   else {
     Constant* OffC = ConstantInt::get(Type::getInt64Ty(GV->getContext()), (uint64_t)Offset, true);
-    OffsetGV = ConstantExpr::getGetElementPtr(CastGV, OffC);
+    OffsetGV = ConstantExpr::getGetElementPtr(0, CastGV, OffC);
   }
     
   // Cast to proper type:
@@ -2170,7 +2170,7 @@ bool IntegrationAttempt::synthCommittedPointer(ShadowValue* I, Type* targetType,
     InTy = cast<PointerType>(InTy)->getElementType();
     if(Type* ElTy = XXXFindElementAtOffset(InTy, Offset, GEPIdxs, GlobalTD)) {
 
-      Result = GetElementPtrInst::Create(BaseI, GEPIdxs, VerboseNames ? "synthgep" : "", emitBB);
+      Result = GetElementPtrInst::Create(ElTy, BaseI, GEPIdxs, VerboseNames ? "synthgep" : "", emitBB);
       if((!isa<PointerType>(targetType)) || ElTy != cast<PointerType>(targetType)->getElementType())
 	Result = CastInst::CreatePointerCast(Result, targetType, VerboseNames ? "synthcastback" : "", emitBB);
       return true;
@@ -2188,7 +2188,7 @@ bool IntegrationAttempt::synthCommittedPointer(ShadowValue* I, Type* targetType,
 
     // Offset:
     Constant* OffsetC = ConstantInt::get(Type::getInt64Ty(emitBB->getContext()), (uint64_t)Offset, true);
-    Value* OffsetI = GetElementPtrInst::Create(CastI, OffsetC, VerboseNames ? "synthgep" : "", emitBB);
+    Value* OffsetI = GetElementPtrInst::Create(Int8Ptr, CastI, OffsetC, VerboseNames ? "synthgep" : "", emitBB);
 
     // Cast back:
     if(targetType == Int8Ptr) {
@@ -2314,7 +2314,7 @@ void IntegrationAttempt::emitChunk(ShadowInstruction* I, BasicBlock* emitBB, Sma
 
   // Create pointer that should be written through:
   Type* targetType;
-  if(chunkSize == 1 && GlobalAA->getTypeStoreSize(getValueType(chunkBegin->second.Values[0].V)) <= 8)
+  if(chunkSize == 1 && GlobalTD->getTypeStoreSize(getValueType(chunkBegin->second.Values[0].V)) <= 8)
     targetType = PointerType::getUnqual(getValueType(chunkBegin->second.Values[0].V));
   else
     targetType = BytePtr;
@@ -2333,7 +2333,7 @@ void IntegrationAttempt::emitChunk(ShadowInstruction* I, BasicBlock* emitBB, Sma
     ImprovedVal& IV = chunkBegin->second.Values[0];
     ShadowValue IVal(I);
     Value* newVal = trySynthVal(&IVal, getValueType(IV.V), chunkBegin->second.SetType, IV, emitBB);
-    uint64_t elSize = GlobalAA->getTypeStoreSize(newVal->getType());
+    uint64_t elSize = GlobalTD->getTypeStoreSize(newVal->getType());
 
     if(elSize > 8) {
 
@@ -2563,7 +2563,7 @@ void IntegrationAttempt::emitOrSynthInst(ShadowInstruction* I, ShadowBB* BB, Sma
   // is still perhaps used.
   
   if(willBeDeleted(ShadowValue(I)) 
-     && (!inst_is<TerminatorInst>(I)) 
+     && (!I->isTerminator()) 
      && (!pass->resolvedReadCalls.count(I)))
     return;
 
@@ -2589,7 +2589,7 @@ void IntegrationAttempt::emitOrSynthInst(ShadowInstruction* I, ShadowBB* BB, Sma
   // We'll emit an instruction. Is it special?
   if(inst_is<PHINode>(I))
     emitPHINode(BB, I, emitBB->specBlock);
-  else if(inst_is<TerminatorInst>(I))
+  else if(I->isTerminator())
     emitTerminator(BB, I, emitBB->specBlock);
   else
     emitInst(BB, I, emitBB->specBlock);
@@ -2752,7 +2752,7 @@ static void applyLocToBlocks(const DebugLoc& loc, const std::vector<BasicBlock*>
 
     for(std::vector<BasicBlock*>::const_iterator it = blocks.begin(), itend = blocks.end(); it != itend; ++it) {
 	for(BasicBlock::iterator IIt = (*it)->begin(), IEnd = (*it)->end(); IIt != IEnd; ++IIt) {
-	    if(IIt->getDebugLoc().isUnknown())
+	    if(!IIt->getDebugLoc())
 		IIt->setDebugLoc(loc);
 	}
     }
@@ -2830,7 +2830,7 @@ void InlineAttempt::commitArgsAndInstructions() {
        (((uint32_t)pass->llioPreludeStackIdx) == pass->targetCallStack.size() && isStackTop)) {
 
       Type* Void = Type::getVoidTy(emitBB->specBlock->getContext());
-      Constant* WDInit = getGlobalModule()->getOrInsertFunction("lliowd_init", Void, NULL);
+      Constant* WDInit = cast<Constant>(getGlobalModule()->getOrInsertFunction("lliowd_init", Void).getCallee());
       CallInst::Create(WDInit, ArrayRef<Value*>(), "", emitBB->specBlock);
 
     }
@@ -2859,13 +2859,14 @@ void InlineAttempt::commitArgsAndInstructions() {
 
 	DIBuilder DIB(*F.getParent());
 
-	DIFile fakeFile = DIB.createFile(fakeFilename, "/nonesuch");
-	DISubprogram fakeFunction = DIB.createFunction(fakeFile, fakeFilename,
+	DIFile* fakeFile = DIB.createFile(fakeFilename, "/nonesuch");
+	DISubprogram* fakeFunction = DIB.createFunction(fakeFile, fakeFilename,
 						       fakeFilename, fakeFile, 1,
-						       pass->fakeDebugType, false,
-						       true, 1);
-	DILexicalBlock fakeBlock = DIB.createLexicalBlock(fakeFunction, fakeFile, 1, 0);
-	DebugLoc newFakeLoc = DebugLoc::getFromDILexicalBlock(fakeBlock);
+							pass->fakeDebugType, 1,
+							DINode::FlagZero, DISubprogram::SPFlagDefinition);
+	DILexicalBlock* fakeBlock = DIB.createLexicalBlock(fakeFunction, fakeFile, 1, 0);
+	MDNode *Scope = fakeBlock->getScope();
+	DebugLoc newFakeLoc = DebugLoc::get(fakeBlock->getLine(), fakeBlock->getColumn(), Scope, NULL);
 	  
 	pFakeLoc = &(pass->fakeDebugLocs[&F] = newFakeLoc);
 
@@ -2884,7 +2885,7 @@ void InlineAttempt::commitArgsAndInstructions() {
 	    it != itend; ++it) {
 
 	  for(BasicBlock::iterator IIt = it->begin(), IEnd = it->end(); IIt != IEnd; ++IIt)
-	    if(IIt->getDebugLoc().isUnknown())
+	    if(!IIt->getDebugLoc())
 	      IIt->setDebugLoc(fakeLoc);
 
 	}
@@ -2976,7 +2977,7 @@ static void unregisterCommittedAllocations(BasicBlock* BB) {
 
   for(BasicBlock::iterator BI = BB->begin(), BE = BB->end(); BI != BE; ++BI) {
 
-    Instruction* I = BI;
+    Instruction* I = &*BI;
     {
       DenseMap<Value*, uint32_t>::iterator findit = GlobalIHP->committedHeapAllocations.find(I);
       if(findit != GlobalIHP->committedHeapAllocations.end()) {
@@ -3006,7 +3007,7 @@ static void unregisterCommittedAllocations(BasicBlock* BB) {
 static void unregisterCommittedAllocations(Function* F) {
 
   for(Function::iterator it = F->begin(), itend = F->end(); it != itend; ++it)
-    unregisterCommittedAllocations(it);
+    unregisterCommittedAllocations(&*it);
 
 }
 
@@ -3364,8 +3365,8 @@ void LLPEAnalysisPass::commit() {
 	++it;
 
       Type* Void = Type::getVoidTy(preludeBlock->getContext());
-      Constant* WDInit = getGlobalModule()->getOrInsertFunction("lliowd_init", Void, NULL);
-      CallInst::Create(WDInit, ArrayRef<Value*>(), "", it);
+      Constant* WDInit = cast<Constant>(getGlobalModule()->getOrInsertFunction("lliowd_init", Void).getCallee());
+      CallInst::Create(WDInit, ArrayRef<Value*>(), "", &*it);
 
     }
 

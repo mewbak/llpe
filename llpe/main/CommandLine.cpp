@@ -142,7 +142,7 @@ static void parseFB(const char* paramName, const std::string& arg, Module& M, Fu
   for(Function::iterator FI = F->begin(), FE = F->end(); FI != FE; ++FI) {
 
     if(FI->getName() == BB1Name) {
-      BB1 = FI;
+      BB1 = &*FI;
       break;
     }
 
@@ -182,9 +182,9 @@ static void parseFBB(const char* paramName, const std::string& arg, Module& M, F
   for(Function::iterator FI = F->begin(), FE = F->end(); FI != FE; ++FI) {
 
     if(FI->getName() == BB1Name)
-      BB1 = FI;
+      BB1 = &*FI;
     if(FI->getName() == BB2Name)
-      BB2 = FI;
+      BB2 = &*FI;
 
   }
 
@@ -226,7 +226,7 @@ static void parseFBI(const char* paramName, const std::string& arg, Module& M, F
   for(Function::iterator FI = F->begin(), FE = F->end(); FI != FE; ++FI) {
 
     if(FI->getName() == BBName)
-      BB = FI;
+      BB = &*FI;
 
   }
 
@@ -318,8 +318,8 @@ uint32_t llvm::findBlock(ShadowFunctionInvar* SFI, BasicBlock* BB) {
 static BasicBlock* findBlockRaw(Function* F, std::string& name) {
 
   for(Function::iterator FI = F->begin(), FE = F->end(); FI != FE; ++FI) {
-    if(((BasicBlock*)FI)->getName() == name)
-      return FI;
+    if((&*FI)->getName() == name)
+      return &*FI;
   }
 
   errs() << "Block " << name << " not found\n";
@@ -509,13 +509,13 @@ void LLPEAnalysisPass::parsePathConditions(cl::list<std::string>& L, PathConditi
 	if(bb) {
 	  BasicBlock::iterator it = bb->begin();
 	  std::advance(it, instIndex);
-	  Instruction* assumeInst = it;
+	  Instruction* assumeInst = &*it;
 	  targetType = assumeInst->getType();
 	}
 	else if(bb == (BasicBlock*)ULONG_MAX) {
 	  Function::arg_iterator it = fStack->arg_begin();
 	  std::advance(it, instIndex);
-	  Argument* A = it;
+	  Argument* A = &*it;
 	  targetType = A->getType();
 	}
 	else {
@@ -557,7 +557,7 @@ void LLPEAnalysisPass::parsePathConditions(cl::list<std::string>& L, PathConditi
 	  
 	  if(assumeC->getType() != GInt8Ptr)
 	    assumeC = ConstantExpr::getBitCast(assumeC, GInt8Ptr);
-	  assumeC = ConstantExpr::getGetElementPtr(assumeC, ConstantInt::get(GInt64, Offset));
+	  assumeC = ConstantExpr::getGetElementPtr(0, assumeC, ConstantInt::get(GInt64, Offset));
 
 	}
 
@@ -692,7 +692,7 @@ void LLPEAnalysisPass::parseArgs(Function& F, std::vector<Constant*>& argConstan
 	Constant* GStr = new GlobalVariable(*(F.getParent()), Str->getType(), true, GlobalValue::InternalLinkage, Str, "specstr");
 	Constant* Zero = ConstantInt::get(Type::getInt64Ty(F.getContext()), 0);
 	Constant* GEPArgs[] = { Zero, Zero };
-	Constant* StrPtr = ConstantExpr::getGetElementPtr(GStr, GEPArgs, 2);
+	Constant* StrPtr = ConstantExpr::getGetElementPtr(0, GStr, GEPArgs, 2);
 	CHECK_ARG(idx, argConstants);
 	argConstants[idx] = StrPtr;
 
@@ -958,7 +958,7 @@ void LLPEAnalysisPass::parseArgs(Function& F, std::vector<Constant*>& argConstan
       exit(1);
     }
 
-    simpleVolatileLoads.insert(BI);
+    simpleVolatileLoads.insert(&*BI);
 
   }
 
@@ -1228,11 +1228,11 @@ void LLPEAnalysisPass::parseArgs(Function& F, std::vector<Constant*>& argConstan
 
   if(this->emitFakeDebug) {
     DIBuilder DIB(*F.getParent());
-    DIFile file = DIB.createFile("llpe.file", "/nonesuch");
-    DIB.createCompileUnit(dwarf::DW_LANG_C89, "llpe.file", "/nonesuch", "LLPE", true, "", 0);
-    DIBasicType retType = DIB.createBasicType("fakechar", 8, 0, dwarf::DW_ATE_signed);
-    DITypeArray functionParamTypes = DIB.getOrCreateTypeArray(ArrayRef<Metadata*>((Metadata*)retType));
-    this->fakeDebugType = DIB.createSubroutineType(file, functionParamTypes);
+    DIFile* file = DIB.createFile("llpe.file", "/nonesuch");
+    DIB.createCompileUnit(dwarf::DW_LANG_C89, file, "LLPE", true, "", 0);
+    DIBasicType* retType = DIB.createBasicType("fakechar", 8, dwarf::DW_ATE_signed);
+    DITypeRefArray functionParamTypes = DIB.getOrCreateTypeArray(ArrayRef<Metadata*>((Metadata*)retType));
+    this->fakeDebugType = DIB.createSubroutineType(functionParamTypes);
   }
 
 }

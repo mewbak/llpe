@@ -40,11 +40,11 @@
 #include <string>
 #include <vector>
 
-#define LPDEBUG(x) DEBUG(do { printDebugHeader(dbgs()); dbgs() << ": " << x; } while(0))
+#define LPDEBUG(x) LLVM_DEBUG(do { printDebugHeader(dbgs()); dbgs() << ": " << x; } while(0))
 
 namespace llvm {
 
-class AliasAnalysis;
+class AAResults;
 class PHINode;
 class NonLocalDepResult;
 class LoadInst;
@@ -57,13 +57,11 @@ class StoreInst;
 class MemTransferInst;
 class MemIntrinsic;
 class CmpInst;
-class TerminatorInst;
 class InlineAttempt;
 class PeelAttempt;
 class LLPEAnalysisPass;
 class Function;
 class DataLayout;
-class AliasAnalysis;
 class Loop;
 class LoopInfo;
 class IntegrationAttempt;
@@ -71,7 +69,7 @@ class PtrToIntInst;
 class IntToPtrInst;
 class BinaryOperator;
 class DominatorTree;
-template<class> class DominatorTreeBase;
+template<class, bool> class DominatorTreeBase;
 template<class> class DomTreeNodeBase;
 class IAWalker;
 class BackwardIAWalker;
@@ -100,7 +98,7 @@ inline void release_assert_fail(const char* str) {
 #define release_assert(x) if(!(x)) { release_assert_fail(#x); }
 
 extern const DataLayout* GlobalTD;
-extern AliasAnalysis* GlobalAA;
+extern AAResults* GlobalAA;
 extern TargetLibraryInfo* GlobalTLI;
 extern LLPEAnalysisPass* GlobalIHP;
 
@@ -419,7 +417,7 @@ class LLPEAnalysisPass : public ModulePass {
    DenseMap<ShadowInstruction*, std::string> optimisticForwardStatus;
 
    const DataLayout* TD;
-   AliasAnalysis* AA;
+   AAResults* AA;
 
    InlineAttempt* RootIA;
 
@@ -528,7 +526,7 @@ class LLPEAnalysisPass : public ModulePass {
 
    bool emitFakeDebug;
    DenseMap<Function*, DebugLoc> fakeDebugLocs;
-   DICompositeType fakeDebugType;
+   DISubroutineType* fakeDebugType;
 
    std::string statsFile;
    unsigned maxContexts;

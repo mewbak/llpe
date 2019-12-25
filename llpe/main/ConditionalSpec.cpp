@@ -328,7 +328,7 @@ void IntegrationAttempt::applyPathCondition(PathCondition* it, PathConditionType
       getImprovedValSetSingle(ShadowValue(it->u.val), writeVal);
 
       // Attribute the effect of the write to first instruction in block:
-      executeWriteInst(0, writePtr, writeVal, GlobalAA->getTypeStoreSize(it->u.val->getType()), &(BB->insts[0]));
+      executeWriteInst(0, writePtr, writeVal, GlobalTD->getTypeStoreSize(it->u.val->getType()), &(BB->insts[0]));
 
     }
 
@@ -689,7 +689,7 @@ void IntegrationAttempt::emitPathConditionCheck(PathCondition& Cond, PathConditi
 
       Value* offConst = ConstantInt::get(Type::getInt64Ty(LLC), Cond.offset);
 
-      testRoot = GetElementPtrInst::Create(testRoot, ArrayRef<Value*>(&offConst, 1), "", emitBlock);
+      testRoot = GetElementPtrInst::Create(Int8Ptr, testRoot, ArrayRef<Value*>(&offConst, 1), "", emitBlock);
 
     }
 
@@ -729,7 +729,7 @@ void IntegrationAttempt::emitPathConditionCheck(PathCondition& Cond, PathConditi
 
       Function* StrcmpFun = getGlobalModule()->getFunction("strcmp");
       if(!StrcmpFun)
-	StrcmpFun = cast<Function>(getGlobalModule()->getOrInsertFunction("strcmp", StrcmpType));
+	StrcmpFun = cast<Function>(getGlobalModule()->getOrInsertFunction("strcmp", StrcmpType).getCallee());
       
       if(testRoot->getType() != Int8Ptr) {
 	Instruction::CastOps Op = CastInst::getCastOpcode(testRoot, false, Int8Ptr, false);
@@ -1351,7 +1351,7 @@ Value* IntegrationAttempt::getSpecValue(uint32_t blockIdx, uint32_t instIdx, Val
       }
       else {
 
-	Ret = getValAsType(Ret, V->getType(), (Instruction*)BI);
+	Ret = getValAsType(Ret, V->getType(), &*BI);
 	
       }
 
@@ -1540,7 +1540,7 @@ void InlineAttempt::markBBAndPreds(ShadowBBInvar* UseBBI, uint32_t instIdx, std:
 // The specialised instance path might insert type conversions before the predecessor block's terminator.
 static PHINode* insertMergePHI(ShadowInstructionInvar& SI, SmallVector<std::pair<BasicBlock*, IntegrationAttempt*>, 4>& specPreds, SmallVector<std::pair<BasicBlock*, Instruction*>, 4>& unspecPreds, BasicBlock* InsertBB) {
 
-  PHINode* NewNode = PHINode::Create(SI.I->getType(), 0, VerboseNames ? "clonemerge" : "", InsertBB->begin());
+  PHINode* NewNode = PHINode::Create(SI.I->getType(), 0, VerboseNames ? "clonemerge" : "", &*(InsertBB->begin()));
   
   for(SmallVector<std::pair<BasicBlock*, IntegrationAttempt*>, 4>::iterator it = specPreds.begin(), itend = specPreds.end(); it != itend; ++it) {
 
@@ -1986,7 +1986,7 @@ void InlineAttempt::remapFailedBlock(BasicBlock::iterator BI, BasicBlock* BB, ui
     --BE;
     if(skipTestedInst) {
       --BE;
-      testedInst = BE;
+      testedInst = &*BE;
       ++BE;
     }
     else
@@ -2002,7 +2002,7 @@ void InlineAttempt::remapFailedBlock(BasicBlock::iterator BI, BasicBlock* BB, ui
   for(; BI != BE; ++BI, ++instIdx) {
 
     ShadowInstructionInvar& SII = BBI->insts[instIdx];
-    Instruction* I = BI;
+    Instruction* I = &*BI;
     
     ReturnInst* RI = dyn_cast<ReturnInst>(BI);
     if(RI && !isRootMainCall()) {
@@ -2029,7 +2029,7 @@ void InlineAttempt::remapFailedBlock(BasicBlock::iterator BI, BasicBlock* BB, ui
 	// Out-of-line commit
 	release_assert(CommitF);
 	Value* Ret;
-	Value* FailFlag = ConstantInt::getFalse(BB->getContext());
+	Constant* FailFlag = ConstantInt::getFalse(BB->getContext());
 	
 	if(F.getFunctionType()->getReturnType()->isVoidTy())
 	  Ret = FailFlag;
@@ -2041,7 +2041,7 @@ void InlineAttempt::remapFailedBlock(BasicBlock::iterator BI, BasicBlock* BB, ui
 	  StructType* retType = cast<StructType>(CommitF->getFunctionType()->getReturnType());
 	  Type* normalRet = Ret->getType();
 	  Constant* undefRet = UndefValue::get(normalRet);
-	  Value* aggTemplate = ConstantStruct::get(retType, undefRet, FailFlag, NULL);
+	  Value* aggTemplate = ConstantStruct::get(retType, {undefRet, FailFlag});
 	  Ret = InsertValueInst::Create(aggTemplate, Ret, 0, VerboseNames ? "fail_ret" : "", RI);
 
 	}
@@ -2091,7 +2091,7 @@ void InlineAttempt::remapFailedBlock(BasicBlock::iterator BI, BasicBlock* BB, ui
 	}
 	// Insert print before the next instruction:
 	++BI;
-	emitRuntimePrint(BB, msg, 0, BI);
+	emitRuntimePrint(BB, msg, 0, &*BI);
 	// Point iterator back at the new instruction:
 	--BI;
     
@@ -2217,7 +2217,7 @@ BasicBlock* IntegrationAttempt::CloneBasicBlockFrom(const BasicBlock* BB,
     if (II->hasName())
       NewInst->setName(II->getName()+NameSuffix);
     NewBB->getInstList().push_back(NewInst);
-    VMap[II] = NewInst;
+    VMap[&*II] = NewInst;
     
   }
   
@@ -2908,7 +2908,7 @@ Value* IntegrationAttempt::emitMemcpyCheck(ShadowInstruction* SI, BasicBlock* em
     release_assert(ThisOffset >= 0);
     
     Value* OffsetCI = ConstantInt::get(I64, (uint64_t)ThisOffset);
-    Value* ElPtr = GetElementPtrInst::Create(writtenPtr, ArrayRef<Value*>(&OffsetCI, 1), "", emitBB);
+    Value* ElPtr = GetElementPtrInst::Create(CharPtr, writtenPtr, ArrayRef<Value*>(&OffsetCI, 1), "", emitBB);
 
     Type* TargetType = PointerType::getUnqual(getValueType(it->second.Values[0].V));
     if(ElPtr->getType() != TargetType)
@@ -3027,7 +3027,7 @@ void llvm::emitRuntimePrint(BasicBlock* emitBB, std::string& message, Value* par
       Type* Int32 = Type::getInt32Ty(emitBB->getContext());
       FunctionType* PrintfTy = FunctionType::get(Int32, ArrayRef<Type*>(CharPtr), /*vararg=*/true);
 
-      Printf = M->getOrInsertFunction("printf", PrintfTy);
+      Printf = cast<Function>(M->getOrInsertFunction("printf", PrintfTy).getCallee());
     
     }
 

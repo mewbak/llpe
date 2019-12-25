@@ -29,7 +29,7 @@ static cl::opt<bool> SkipPostCommit("int-skip-post-commit");
 static BasicBlock* getUniqueSuccessor(BasicBlock* BB) {
 
   // We might run on blocks without a terminator when contexts are not yet committed.
-  TerminatorInst* TI = BB->getTerminator();
+  Instruction* TI = BB->getTerminator();
   if(!TI)
     return 0;
 
@@ -77,11 +77,11 @@ template<class T, class Callback> void postCommitOptimiseBlocks(T itstart, T ite
 
   for(T it = itstart; it != itend; ++it) {
 
-    BasicBlock* BB = it;
+    BasicBlock* BB = &*it;
     for(BasicBlock::iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
 
-      if(isInstructionTriviallyDead(II, GlobalTLI))
-	Del.push_back(II);
+      if(isInstructionTriviallyDead(&*II, GlobalTLI))
+	Del.push_back(&*II);
 
     }
 
@@ -100,7 +100,7 @@ template<class T, class Callback> void postCommitOptimiseBlocks(T itstart, T ite
 
   for(T it = itstart; it != itend; ++it) {
 
-    BasicBlock* BB = it;
+    BasicBlock* BB = &*it;
     if(!Seen.insert(BB).second)
       continue;
 
@@ -260,7 +260,7 @@ void InlineAttempt::postCommitOptimise() {
 
       SmallSet<BasicBlock*, 8> Visited;
       for(Function::iterator it = firstFailedBlock, itend = CommitF->end(); it != itend; ++it)
-	Visited.insert(it);
+	Visited.insert(&*it);
 
       BasicBlock* firstBlock = &CommitF->getEntryBlock();
       std::vector<BasicBlock*> Ordered;

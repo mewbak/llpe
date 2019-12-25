@@ -348,7 +348,7 @@ static ShadowValue getOpenCmpResult(CmpInst* CmpI, int64_t CmpVal, bool flip) {
       return ShadowValue(ConstantInt::getFalse(CmpI->getContext()));
     break;
   default:
-    DEBUG(dbgs() << "Failed to fold " << itcache(*CmpI) << " because it compares a symbolic FD using an unsupported predicate\n");
+    LLVM_DEBUG(dbgs() << "Failed to fold " << itcache(*CmpI) << " because it compares a symbolic FD using an unsupported predicate\n");
     break;
   }
 
@@ -796,7 +796,7 @@ bool IntegrationAttempt::tryFoldPointerCmp(ShadowInstruction* SI, std::pair<ValS
   if(op0Arg && op1Arg && (op0Arg == zero || op1Arg == zero)) {
     
     ImpType = ValSetTypeScalar;
-    Improved = ShadowValue(ConstantFoldCompareInstOperands(CmpI->getPredicate(), op0Arg, op1Arg, GlobalTD));
+    Improved = ShadowValue(ConstantFoldCompareInstOperands(CmpI->getPredicate(), op0Arg, op1Arg, *GlobalTD));
 
     if(comparingHeapPointer && needsRuntimeCheck && !pass->omitMallocChecks) {
 
@@ -825,7 +825,7 @@ bool IntegrationAttempt::tryFoldPointerCmp(ShadowInstruction* SI, std::pair<ValS
     op0Arg = ConstantInt::get(I64, Ops[0].second.Offset);
     op1Arg = ConstantInt::get(I64, Ops[1].second.Offset);
     ImpType = ValSetTypeScalar;
-    Improved.V = ShadowValue(ConstantFoldCompareInstOperands(getSignedPred(CmpI->getPredicate()), op0Arg, op1Arg, GlobalTD));
+    Improved.V = ShadowValue(ConstantFoldCompareInstOperands(getSignedPred(CmpI->getPredicate()), op0Arg, op1Arg, *GlobalTD));
     return true;
 
   }
@@ -1401,7 +1401,7 @@ void IntegrationAttempt::tryEvaluateResult(ShadowInstruction* SI,
 	  else {
 	    if (!OpC) continue;
 	    // Handle a struct and array indices which add their offset to the pointer.
-	    if (StructType *STy = dyn_cast<StructType>(*GTI)) {
+	    if (StructType *STy = GTI.getStructTypeOrNull()) {
 	      Improved.Offset += GlobalTD->getStructLayout(STy)->getElementOffset(OpC);
 	    } else {
 	      uint64_t Size = GlobalTD->getTypeAllocSize(GTI.getIndexedType());
@@ -1619,13 +1619,13 @@ void IntegrationAttempt::tryEvaluateResult(ShadowInstruction* SI,
       }
     }    
 
-    newConst = ConstantFoldCompareInstOperands(CI->getPredicate(), instOperands[0], instOperands[1], GlobalTD);
+    newConst = ConstantFoldCompareInstOperands(CI->getPredicate(), instOperands[0], instOperands[1], *GlobalTD);
 
   }
   else if(isa<LoadInst>(I))
-    newConst = ConstantFoldLoadFromConstPtr(instOperands[0], GlobalTD);
+    newConst = ConstantFoldLoadFromConstPtr(instOperands[0], I->getType(), *GlobalTD);
   else
-    newConst = ConstantFoldInstOperands(I->getOpcode(), I->getType(), instOperands, GlobalTD, GlobalTLI);
+    newConst = ConstantFoldInstOperands(I, instOperands, *GlobalTD, GlobalTLI);
 
   if(newConst) {
 
@@ -1953,7 +1953,7 @@ bool IntegrationAttempt::tryEvaluateMultiInst(ShadowInstruction* SI, ImprovedVal
     return tryEvaluateMultiCmp(SI, NewIV);
 
   unsigned opcode = SI->invar->I->getOpcode();
-  int64_t resSize = (int64_t)GlobalAA->getTypeStoreSize(SI->getType());
+  int64_t resSize = (int64_t)GlobalTD->getTypeStoreSize(SI->getType());
 
   switch(opcode) {
     
@@ -2187,7 +2187,7 @@ bool IntegrationAttempt::tryEvaluateMultiInst(ShadowInstruction* SI, ImprovedVal
 
 	Constant* MaskedConst = ConstantExpr::getAnd(PVConst, MaskC);
 	if(ConstantExpr* MaskedCE = dyn_cast<ConstantExpr>(MaskedConst))
-	  MaskedConst = ConstantFoldConstantExpression(MaskedCE);
+	    MaskedConst = ConstantFoldConstant(MaskedCE, *GlobalTD);
 
 	ShadowValue MaskedConstV(MaskedConst);
 	addValToPB(MaskedConstV, *NewIVS);

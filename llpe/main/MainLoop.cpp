@@ -28,6 +28,7 @@
 #include "llvm/Analysis/LLPE.h"
 
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/Analysis/ConstantFolding.h"
@@ -670,7 +671,7 @@ bool IntegrationAttempt::analyseInstruction(ShadowInstruction* SI, bool inLoopAn
   ShadowInstructionInvar* SII = SI->invar;
   Instruction* I = SII->I;
 
-  if(inst_is<TerminatorInst>(SI) && !inst_is<InvokeInst>(SI)) {
+  if(SI->isTerminator() && !inst_is<InvokeInst>(SI)) {
     // Call tryEvalTerminator regardless of scope.
     return tryEvaluateTerminator(SI, loadedVarargsHere);
   }
@@ -694,7 +695,7 @@ bool IntegrationAttempt::analyseInstruction(ShadowInstruction* SI, bool inLoopAn
 	
       // Certain intrinsics manifest as calls but fold like ordinary instructions.
       if(Function* F = getCalledFunction(SI)) {
-	if(canConstantFoldCallTo(F))
+	if(canConstantFoldCallTo(cast<CallInst>(I), F))
 	  break;
       }
 
@@ -1157,7 +1158,7 @@ void IntegrationAttempt::executeBlock(ShadowBB* BB) {
       {
 
 	if(Function* F = getCalledFunction(SI)) {
-	  if(canConstantFoldCallTo(F))
+	  if(canConstantFoldCallTo(cast_inst<CallInst>(SI), F))
 	    break;
 	}
 

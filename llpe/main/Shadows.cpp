@@ -19,6 +19,7 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LLPE.h"
+#include "llvm/Support/AtomicOrdering.h"
 
 using namespace llvm;
 
@@ -159,7 +160,7 @@ ShadowLoopInvar* LLPEAnalysisPass::getLoopInfo(ShadowFunctionInvar* FInfo,
   }
 
   {
-    SmallVector<std::pair<const BasicBlock*, const BasicBlock*>, 4> exitEdges;
+    SmallVector<std::pair<BasicBlock*, BasicBlock*>, 4> exitEdges;
     L->getExitEdges(exitEdges);
     LInfo->exitEdges.reserve(exitEdges.size());
     for(unsigned i = 0; i < exitEdges.size(); ++i)
@@ -192,8 +193,8 @@ void LLPEAnalysisPass::initShadowGlobals(Module& M, uint32_t extraSlots) {
 
   for(Module::global_iterator it = M.global_begin(), itend = M.global_end(); it != itend; ++it, ++i) {
 
-    shadowGlobals[i].G = it;
-    shadowGlobalsIdx[it] = i;
+    shadowGlobals[i].G = &*it;
+    shadowGlobalsIdx[&*it] = i;
 
   }
 
@@ -202,7 +203,7 @@ void LLPEAnalysisPass::initShadowGlobals(Module& M, uint32_t extraSlots) {
 
     // getTypeStoreSize can be expensive, so do it once here.
     if(it->isConstant()) {
-      shadowGlobals[i].storeSize = GlobalAA->getTypeStoreSize(shadowGlobals[i].G->getType());
+      shadowGlobals[i].storeSize = GlobalTD->getTypeStoreSize(shadowGlobals[i].G->getType());
       continue;
     }
 
@@ -212,7 +213,7 @@ void LLPEAnalysisPass::initShadowGlobals(Module& M, uint32_t extraSlots) {
     heap.push_back(AllocData());
     AllocData& AD = heap.back();
     AD.allocIdx = heap.size() - 1;
-    AD.storeSize = GlobalAA->getTypeStoreSize(it->getType()->getElementType());
+    AD.storeSize = GlobalTD->getTypeStoreSize(it->getType()->getElementType());
     AD.isCommitted = true;
     // This usually points to a malloc instruction -- here the global itself.
     AD.allocValue = ShadowValue(&(shadowGlobals[i]));
@@ -265,7 +266,7 @@ ShadowFunctionInvar* LLPEAnalysisPass::getFunctionInvarInfo(Function& F) {
   // Beware! This LoopInfo instance and whatever Loop objects come from it are only alive until
   // the next call to getAnalysis. Therefore the ShadowLoopInvar objects we make here
   // must mirror all information we're interested in from the Loops.
-  LoopInfo* LI = &getAnalysis<LoopInfo>(F);
+  LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(F).getLoopInfo();
 
   ShadowFunctionInvar* RetInfoP = new ShadowFunctionInvar();
   functionInfo[&F] = RetInfoP;
@@ -298,7 +299,7 @@ ShadowFunctionInvar* LLPEAnalysisPass::getFunctionInvarInfo(Function& F) {
     BasicBlock::iterator it, endit;
     for(j = 0, it = BB->begin(), endit = BB->end(); it != endit; ++it, ++j) {
 
-      IIndices[it] = j;
+      IIndices[&*it] = j;
 
     }
 
@@ -361,7 +362,7 @@ ShadowFunctionInvar* LLPEAnalysisPass::getFunctionInvarInfo(Function& F) {
     BasicBlock::iterator BI = BB->begin(), BE = BB->end();
     for(uint32_t j = 0; BI != BE; ++BI, ++j) {
 
-      Instruction* I = BI;
+      Instruction* I = &*BI;
       ShadowInstructionInvar& SI = insts[j];
 
       SI.idx = j;
@@ -454,7 +455,7 @@ ShadowFunctionInvar* LLPEAnalysisPass::getFunctionInvarInfo(Function& F) {
   uint32_t i = 0;
   for(; i != F.arg_size(); ++i, ++AI) {
 
-    Argument* A = AI;
+    Argument* A = &*AI;
     ShadowArgInvar& SArg = Args[i];
     SArg.A = A;
       
@@ -999,11 +1000,11 @@ bool ShadowInstruction::hasOrderingConstraint() {
   case Instruction::Store:
     return !cast_inst<StoreInst>(this)->isUnordered();
   case Instruction::AtomicRMW:
-    return cast_inst<AtomicRMWInst>(this)->getOrdering() > Unordered;
+    return isStrongerThan(cast_inst<AtomicRMWInst>(this)->getOrdering(), AtomicOrdering::Unordered);
   case Instruction::AtomicCmpXchg: 
     {
       auto cmpx = cast_inst<AtomicCmpXchgInst>(this);
-      return cmpx->getSuccessOrdering() > Unordered || cmpx->getFailureOrdering() > Unordered;
+      return isStrongerThan(cmpx->getSuccessOrdering(), AtomicOrdering::Unordered) || isStrongerThan(cmpx->getFailureOrdering(), AtomicOrdering::Unordered);
     }
   case Instruction::Fence:
     return true;
